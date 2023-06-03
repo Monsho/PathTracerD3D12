@@ -1243,7 +1243,19 @@ bool SampleApplication::InitializeOIDN()
 		sl12::ConsolePrint("%s\n", errorMsg);
 		return false;
 	}
-	oidnDenoiseResult_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hDenoise, nullptr, noisySource_->GetBufferDesc().size);
+	oidnAlbedoSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hAlbedo, nullptr, albedoSource_->GetBufferDesc().size);
+	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
+	{
+		sl12::ConsolePrint("%s\n", errorMsg);
+		return false;
+	}
+	oidnNormalSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hNormal, nullptr, normalSource_->GetBufferDesc().size);
+	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
+	{
+		sl12::ConsolePrint("%s\n", errorMsg);
+		return false;
+	}
+	oidnDenoiseResult_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hDenoise, nullptr, denoiseResult_->GetBufferDesc().size);
 	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
 	{
 		sl12::ConsolePrint("%s\n", errorMsg);
@@ -1261,6 +1273,8 @@ bool SampleApplication::InitializeOIDN()
 void SampleApplication::DestroyOIDN()
 {
 	oidnNoisySource_ = oidn::BufferRef();
+	oidnAlbedoSource_ = oidn::BufferRef();
+	oidnNormalSource_ = oidn::BufferRef();
 	oidnDenoiseResult_ = oidn::BufferRef();
 	oidnDevice_ = oidn::DeviceRef();
 	oidnPhysicalDevice_ = oidn::PhysicalDeviceRef();
