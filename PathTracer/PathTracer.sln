@@ -4,6 +4,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.4.33110.190
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PathTracer", "PathTracer\PathTracer.vcxproj", "{5F63FD81-E665-4441-B28D-586F6B879844}"
+	ProjectSection(ProjectDependencies) = postProject
+		{027478E8-F042-4016-BAA7-CDD455A319EA} = {027478E8-F042-4016-BAA7-CDD455A319EA}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleLib12", "..\SampleLib12\SampleLib12\SampleLib12.vcxproj", "{027478E8-F042-4016-BAA7-CDD455A319EA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +20,10 @@ Global
 		{5F63FD81-E665-4441-B28D-586F6B879844}.Debug|x64.Build.0 = Debug|x64
 		{5F63FD81-E665-4441-B28D-586F6B879844}.Release|x64.ActiveCfg = Release|x64
 		{5F63FD81-E665-4441-B28D-586F6B879844}.Release|x64.Build.0 = Release|x64
+		{027478E8-F042-4016-BAA7-CDD455A319EA}.Debug|x64.ActiveCfg = Debug|x64
+		{027478E8-F042-4016-BAA7-CDD455A319EA}.Debug|x64.Build.0 = Debug|x64
+		{027478E8-F042-4016-BAA7-CDD455A319EA}.Release|x64.ActiveCfg = Release|x64
+		{027478E8-F042-4016-BAA7-CDD455A319EA}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
