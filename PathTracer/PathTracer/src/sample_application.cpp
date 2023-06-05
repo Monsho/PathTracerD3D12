@@ -1237,25 +1237,25 @@ bool SampleApplication::InitializeOIDN()
 	hr = device_.GetDeviceDep()->CreateSharedHandle(normalSource_->GetResourceDep(), nullptr, GENERIC_ALL, nullptr, &hNormal);
 	hr = device_.GetDeviceDep()->CreateSharedHandle(denoiseResult_->GetResourceDep(), nullptr, GENERIC_ALL, nullptr, &hDenoise);
 
-	oidnNoisySource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hNoisy, nullptr, noisySource_->GetBufferDesc().size);
+	oidnNoisySource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::OpaqueWin32, hNoisy, nullptr, noisySource_->GetBufferDesc().size);
 	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
 	{
 		sl12::ConsolePrint("%s\n", errorMsg);
 		return false;
 	}
-	oidnAlbedoSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hAlbedo, nullptr, albedoSource_->GetBufferDesc().size);
+	oidnAlbedoSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::OpaqueWin32, hAlbedo, nullptr, albedoSource_->GetBufferDesc().size);
 	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
 	{
 		sl12::ConsolePrint("%s\n", errorMsg);
 		return false;
 	}
-	oidnNormalSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hNormal, nullptr, normalSource_->GetBufferDesc().size);
+	oidnNormalSource_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::OpaqueWin32, hNormal, nullptr, normalSource_->GetBufferDesc().size);
 	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
 	{
 		sl12::ConsolePrint("%s\n", errorMsg);
 		return false;
 	}
-	oidnDenoiseResult_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::D3D12Resource, hDenoise, nullptr, denoiseResult_->GetBufferDesc().size);
+	oidnDenoiseResult_ = oidnDevice_.newBuffer(oidn::ExternalMemoryTypeFlag::OpaqueWin32, hDenoise, nullptr, denoiseResult_->GetBufferDesc().size);
 	if (oidnDevice_.getError(errorMsg) != oidn::Error::None)
 	{
 		sl12::ConsolePrint("%s\n", errorMsg);
