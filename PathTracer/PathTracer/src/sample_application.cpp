@@ -1187,7 +1187,7 @@ bool SampleApplication::InitializeOIDN()
 	oidnDevice_.commit();
 
 	auto memTypes = oidnDevice_.get<int>("externalMemoryTypes");
-	if (!(memTypes & (int)oidn::ExternalMemoryTypeFlag::D3D12Resource))
+	if (!(memTypes & (int)oidn::ExternalMemoryTypeFlag::OpaqueWin32))
 	{
 		return false;
 	}
