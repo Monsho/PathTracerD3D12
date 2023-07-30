@@ -1,6 +1,8 @@
 #include "cbuffer.hlsli"
 #include "payload.hlsli"
 
+#if !ENABLE_DYNAMIC_RESOURCE
+
 // local
 ConstantBuffer<SubmeshOffsetCB>	cbSubmesh		: register(b0, space1);
 ByteAddressBuffer				Indices			: register(t0, space1);
@@ -8,6 +10,22 @@ ByteAddressBuffer				Vertices		: register(t1, space1);
 Texture2D						texBaseColor	: register(t2, space1);
 Texture2D						texORM			: register(t3, space1);
 SamplerState					texBaseColor_s	: register(s0, space1);
+
+#else
+
+struct LocalIndex
+{
+	uint cbSubmesh;
+	uint Indices;
+	uint Vertices;
+	uint texBaseColor;
+	uint texORM;
+	uint texBaseColor_s;
+};
+
+ConstantBuffer<LocalIndex>	cbLocalIndices	: register(b1, space0);
+
+#endif
 
 uint3 GetTriangleIndices2byte(uint offset, ByteAddressBuffer indexBuffer)
 {
@@ -61,6 +79,16 @@ float2 GetFloat2Attribute(uint vertIdx, uint startOffset, ByteAddressBuffer vert
 [shader("closesthit")]
 void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
 {
+#if ENABLE_DYNAMIC_RESOURCE
+	// get dynamic resources.
+	ConstantBuffer<SubmeshOffsetCB> cbSubmesh = ResourceDescriptorHeap[cbLocalIndices.cbSubmesh];
+	ByteAddressBuffer Indices = ResourceDescriptorHeap[cbLocalIndices.Indices];
+	ByteAddressBuffer Vertices = ResourceDescriptorHeap[cbLocalIndices.Vertices];
+	Texture2D texBaseColor = ResourceDescriptorHeap[cbLocalIndices.texBaseColor];
+	Texture2D texORM = ResourceDescriptorHeap[cbLocalIndices.texORM];
+	SamplerState texBaseColor_s = SamplerDescriptorHeap[cbLocalIndices.texBaseColor_s];
+#endif
+
 	uint3 indices = Get32bitIndices(PrimitiveIndex(), cbSubmesh.index, Indices);
 
 	float2 uvs[3] = {
@@ -100,6 +128,16 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 [shader("anyhit")]
 void MaterialAHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
 {
+#if ENABLE_DYNAMIC_RESOURCE
+	// get dynamic resources.
+	ConstantBuffer<SubmeshOffsetCB> cbSubmesh = ResourceDescriptorHeap[cbLocalIndices.cbSubmesh];
+	ByteAddressBuffer Indices = ResourceDescriptorHeap[cbLocalIndices.Indices];
+	ByteAddressBuffer Vertices = ResourceDescriptorHeap[cbLocalIndices.Vertices];
+	Texture2D texBaseColor = ResourceDescriptorHeap[cbLocalIndices.texBaseColor];
+	Texture2D texORM = ResourceDescriptorHeap[cbLocalIndices.texORM];
+	SamplerState texBaseColor_s = SamplerDescriptorHeap[cbLocalIndices.texBaseColor_s];
+#endif
+
 	uint3 indices = Get32bitIndices(PrimitiveIndex(), cbSubmesh.index, Indices);
 
 	float2 uvs[3] = {

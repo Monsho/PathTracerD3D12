@@ -15,6 +15,8 @@
 #define USE_IN_CPP
 #include "../shaders/cbuffer.hlsli"
 
+#define ENABLE_DYNAMIC_RESOURCE 0
+
 namespace
 {
 	static const float kFovY = 90.0f;
@@ -66,6 +68,9 @@ namespace
 		0,	// uav
 		1,	// sampler
 	};
+
+	static const sl12::u32 kGlobalIndexCount = 6;
+	static const sl12::u32 kLocalIndexCount = 6;
 
 	static LPCWSTR kMaterialCHS = L"MaterialCHS";
 	static LPCWSTR kMaterialAHS = L"MaterialAHS";
@@ -120,13 +125,15 @@ bool SampleApplication::Initialize()
 
 	// compile shaders.
 	const std::string shaderBaseDir = sl12::JoinPath(homeDir_, kShaderDir);
+	std::vector<sl12::ShaderDefine> shaderDefines;
+	shaderDefines.push_back(sl12::ShaderDefine("ENABLE_DYNAMIC_RESOURCE", ENABLE_DYNAMIC_RESOURCE ? "1" : "0"));
 	for (int i = 0; i < ShaderName::MAX; i++)
 	{
 		const char* file = kShaderFileAndEntry[i * 2 + 0];
 		const char* entry = kShaderFileAndEntry[i * 2 + 1];
 		auto handle = shaderMan_->CompileFromFile(
 			sl12::JoinPath(shaderBaseDir, file),
-			entry, sl12::GetShaderTypeFromFileName(file), 6, 5, nullptr, nullptr);
+			entry, sl12::GetShaderTypeFromFileName(file), 6, 6, nullptr, &shaderDefines);
 		hShaders_.push_back(handle);
 	}
 	
@@ -139,6 +146,7 @@ bool SampleApplication::Initialize()
 	{
 		hSponzaMesh_ = resLoader_->LoadRequest<sl12::ResourceItemMesh>("mesh/sponza/sponza.rmesh");
 		hSphereMesh_ = resLoader_->LoadRequest<sl12::ResourceItemMesh>("mesh/sphere/sphere.rmesh");
+		hTitleMesh_ = resLoader_->LoadRequest<sl12::ResourceItemMesh>("mesh/title/title.rmesh");
 	}
 	hDetailTex_ = resLoader_->LoadRequest<sl12::ResourceItemTexture>("texture/detail_normal.dds");
 	hDotTex_ = resLoader_->LoadRequest<sl12::ResourceItemTexture>("texture/dot_normal.dds");
@@ -259,6 +267,21 @@ bool SampleApplication::Initialize()
 
 			sceneMeshes_.push_back(mesh);
 		}
+		// title
+		{
+			auto mesh = std::make_shared<sl12::SceneMesh>(&device_, hTitleMesh_.GetItem<sl12::ResourceItemMesh>());
+			DirectX::XMFLOAT3 pos(400.0f, 1000.0f, 40.0f);
+			DirectX::XMFLOAT3 scl(2.5f, 2.5f, 2.5f);
+			DirectX::XMFLOAT3 rot(0.0f, DirectX::XMConvertToRadians(90.0f), 0.0f);
+			DirectX::XMFLOAT4X4 mat;
+			DirectX::XMMATRIX m = DirectX::XMMatrixScaling(scl.x, scl.y, scl.z)
+									* DirectX::XMMatrixRotationY(DirectX::XMConvertToRadians(90.0f))
+									* DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
+			DirectX::XMStoreFloat4x4(&mat, m);
+			mesh->SetMtxLocalToWorld(mat);
+
+			sceneMeshes_.push_back(mesh);
+		}
 	}
 	ComputeSceneAABB();
 
@@ -270,6 +293,7 @@ bool SampleApplication::Initialize()
 	
 	// init root signature and pipeline state.
 	rsVsPs_ = sl12::MakeUnique<sl12::RootSignature>(&device_);
+	rsTonemapDR_ = sl12::MakeUnique<sl12::RootSignature>(&device_);
 	psoTonemap_ = sl12::MakeUnique<sl12::GraphicsPipelineState>(&device_);
 	rsVsPs_->Initialize(&device_, hShaders_[ShaderName::FullscreenVV].GetShader(), hShaders_[ShaderName::TonemapP].GetShader(), nullptr, nullptr, nullptr);
 	{
@@ -296,11 +320,22 @@ bool SampleApplication::Initialize()
 		desc.dsvFormat = DXGI_FORMAT_UNKNOWN;
 		desc.multisampleCount = 1;
 
+#if !ENABLE_DYNAMIC_RESOURCE
 		if (!psoTonemap_->Initialize(&device_, desc))
 		{
 			sl12::ConsolePrint("Error: failed to init tonemap pso.");
 			return false;
 		}
+#else
+		rsTonemapDR_->InitializeWithDynamicResource(&device_, 0, 2, 0, 0, 0);
+		desc.pRootSignature = &rsTonemapDR_;
+
+		if (!psoTonemap_->Initialize(&device_, desc))
+		{
+			sl12::ConsolePrint("Error: failed to init tonemap pso.");
+			return false;
+		}
+#endif
 	}
 	
 	if (!CreateRaytracingPipeline())
@@ -369,7 +404,7 @@ bool SampleApplication::Execute()
 		// path trace settings.
 		if (ImGui::CollapsingHeader("Path Trace", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			ImGui::Checkbox("Denoise", &bDeiseEnable_);
+			ImGui::Checkbox("Denoise", &bDenoiseEnable_);
 			ImGui::SliderInt("Sample Count", &ptSampleCount_, 1, 16);
 			ImGui::SliderInt("Depth Max", &ptDepthMax_, 1, 16);
 		}
@@ -425,8 +460,13 @@ bool SampleApplication::Execute()
 		bvhMan_->CopyCompactionInfoOnGraphicsQueue(pCmdList);
 
 		// create ray tracing shader table.
+#if !ENABLE_DYNAMIC_RESOURCE
 		bool bCreateRTShaderTableSuccess = CreateRayTracingShaderTable(pCmdList, tmpRenderCmds);
 		assert(bCreateRTShaderTableSuccess);
+#else
+		bool bCreateRTShaderTableDRSuccess = CreateRayTracingShaderTableDR(pCmdList, tmpRenderCmds);
+		assert(bCreateRTShaderTableDRSuccess);
+#endif
 	}
 
 	// create targets.
@@ -553,6 +593,7 @@ bool SampleApplication::Execute()
 
 	// path tracing.
 	renderGraph_->NextPass(pCmdList);
+#if !ENABLE_DYNAMIC_RESOURCE
 	{
 		GPU_MARKER(pCmdList, 1, "PathTracing");
 		
@@ -591,8 +632,59 @@ bool SampleApplication::Execute()
 		pCmdList->GetDxrCommandList()->SetPipelineState1(psoRayTracing_->GetPSO());
 		pCmdList->GetDxrCommandList()->DispatchRays(&desc);
 	}
+#else
+	{
+		GPU_MARKER(pCmdList, 1, "PathTracingDR");
+		
+		// output barrier.
+		renderGraph_->BarrierOutputsAll(pCmdList);
+
+		// set global resource index.
+		struct GlobalIndex
+		{
+			uint cbScene;
+			uint cbLight;
+			uint cbPathTrace;
+			uint rtResult;
+			uint rtAlbedo;
+			uint rtNormal;
+		};
+		std::vector<sl12::u32> globalIndices;
+		globalIndices.resize(6);
+		globalIndices[0] = hSceneCB.GetCBV()->GetDynamicDescInfo().index;
+		globalIndices[1] = hLightCB.GetCBV()->GetDynamicDescInfo().index;
+		globalIndices[2] = hPathTraceCB.GetCBV()->GetDynamicDescInfo().index;
+		globalIndices[3] = renderGraph_->GetTarget(rtResultID)->uavs[0]->GetDynamicDescInfo().index;
+		globalIndices[4] = renderGraph_->GetTarget(rtAlbedoID)->uavs[0]->GetDynamicDescInfo().index;
+		globalIndices[5] = renderGraph_->GetTarget(rtNormalID)->uavs[0]->GetDynamicDescInfo().index;
+
+		// load to command list.
+		D3D12_GPU_VIRTUAL_ADDRESS as_address[] = {
+			pBvhScene->GetGPUAddress(),
+		};
+		pCmdList->SetRaytracingGlobalRootSignatureAndDynamicResource(&rsRTGlobal_, as_address, ARRAYSIZE(as_address), globalIndices);
+
+		// レイトレースを実行
+		D3D12_DISPATCH_RAYS_DESC desc{};
+		desc.HitGroupTable.StartAddress = MaterialHGTable_->GetResourceDep()->GetGPUVirtualAddress();
+		desc.HitGroupTable.SizeInBytes = MaterialHGTable_->GetBufferDesc().size;
+		desc.HitGroupTable.StrideInBytes = bvhShaderRecordSize_;
+		desc.MissShaderTable.StartAddress = PathTracerMSTable_->GetResourceDep()->GetGPUVirtualAddress();
+		desc.MissShaderTable.SizeInBytes = PathTracerMSTable_->GetBufferDesc().size;
+		desc.MissShaderTable.StrideInBytes = bvhShaderRecordSize_;
+		desc.RayGenerationShaderRecord.StartAddress = PathTracerRGSTable_->GetResourceDep()->GetGPUVirtualAddress();
+		desc.RayGenerationShaderRecord.SizeInBytes = PathTracerRGSTable_->GetBufferDesc().size;
+		desc.Width = displayWidth_;
+		desc.Height = displayHeight_;
+		desc.Depth = 1;
+		pCmdList->GetDxrCommandList()->SetPipelineState1(psoRayTracing_->GetPSO());
+		pCmdList->GetDxrCommandList()->DispatchRays(&desc);
+	}
+#endif
 	renderGraph_->EndPass();
 
+	pCmdList->SetDescriptorHeapDirty();
+	
 	// tonemap pass.
 	pTimestamp->Query(pCmdList);
 	renderGraph_->NextPass(pCmdList);
@@ -628,11 +720,16 @@ bool SampleApplication::Execute()
 		rect.bottom = displayHeight_;
 		pCmdList->GetLatestCommandList()->RSSetScissorRects(1, &rect);
 
+		// set pipeline.
+		pCmdList->GetLatestCommandList()->SetPipelineState(psoTonemap_->GetPSO());
+		pCmdList->GetLatestCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+#if !ENABLE_DYNAMIC_RESOURCE
 		// set descriptors.
 		sl12::DescriptorSet descSet;
 		descSet.Reset();
 		descSet.SetPsCbv(0, hSceneCB.GetCBV()->GetDescInfo().cpuHandle);
-		if (bDeiseEnable_)
+		if (bDenoiseEnable_)
 		{
 			descSet.SetPsSrv(0, denoiseResultSRV_->GetDescInfo().cpuHandle);
 		}
@@ -641,15 +738,23 @@ bool SampleApplication::Execute()
 			descSet.SetPsSrv(0, renderGraph_->GetTarget(rtResultID)->bufferSrvs[0]->GetDescInfo().cpuHandle);
 		}
 
-		// set pipeline.
-		pCmdList->GetLatestCommandList()->SetPipelineState(psoTonemap_->GetPSO());
-		pCmdList->GetLatestCommandList()->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		pCmdList->SetGraphicsRootSignatureAndDescriptorSet(&rsVsPs_, &descSet);
+#else
+		std::vector<std::vector<sl12::u32>> resIndices;
+		resIndices.resize(1);
+		resIndices[0].resize(2);
+		resIndices[0][0] = hSceneCB.GetCBV()->GetDynamicDescInfo().index;
+		resIndices[0][1] = bDenoiseEnable_ ? denoiseResultSRV_->GetDynamicDescInfo().index : renderGraph_->GetTarget(rtResultID)->bufferSrvs[0]->GetDynamicDescInfo().index;
+
+		pCmdList->SetGraphicsRootSignatureAndDynamicResource(&rsTonemapDR_, resIndices);
+#endif
 
 		// draw fullscreen.
 		pCmdList->GetLatestCommandList()->DrawInstanced(3, 1, 0, 0);
 	}
 	renderGraph_->EndPass();
+
+	pCmdList->SetDescriptorHeapDirty();
 
 	// draw GUI.
 	pTimestamp->Query(pCmdList);
@@ -674,7 +779,7 @@ bool SampleApplication::Execute()
 	device_.KillObject(pBvhScene);
 
 	// execute oidn denoise.
-	if (bDeiseEnable_)
+	if (bDenoiseEnable_)
 		ExecuteDenoise();
 	
 	// execute current frame render.
@@ -826,6 +931,7 @@ bool SampleApplication::CreateRaytracingPipeline()
 	// only one fixed root signature.
 	rsRTGlobal_ = sl12::MakeUnique<sl12::RootSignature>(&device_);
 	rsRTLocal_ = sl12::MakeUnique<sl12::RootSignature>(&device_);
+#if !ENABLE_DYNAMIC_RESOURCE
 	if (!sl12::CreateRaytracingRootSignature(&device_,
 		1,		// AS count
 		kRTDescriptorCountGlobal,
@@ -834,6 +940,14 @@ bool SampleApplication::CreateRaytracingPipeline()
 	{
 		return false;
 	}
+#else
+	if (!sl12::CreateRayTracingRootSignatureWithDynamicResource(&device_,
+		1, kGlobalIndexCount, kLocalIndexCount,
+		&rsRTGlobal_, &rsRTLocal_))
+	{
+		return false;
+	}
+#endif
 
 	// create collection.
 	{
@@ -1112,6 +1226,198 @@ bool SampleApplication::CreateRayTracingShaderTable(sl12::CommandList* pCmdList,
 				p += descHandleOffset;
 
 				memcpy(p, &material_table[i], sizeof(LocalTable));
+
+				p = start + shaderRecordSize;
+			}
+		}
+		buffer->Unmap();
+
+		return true;
+	};
+	// material shader table.
+	{
+		void* hg_identifier[4];
+		{
+			ID3D12StateObjectProperties* prop;
+			psoRayTracing_->GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+			hg_identifier[0] = prop->GetShaderIdentifier(kMaterialOpacityHG);
+			hg_identifier[1] = prop->GetShaderIdentifier(kMaterialMaskedHG);
+			prop->Release();
+		}
+		std::vector<void*> hg_table;
+		for (auto v : opaque_table)
+		{
+			hg_table.push_back(v ? hg_identifier[0] : hg_identifier[1]);
+		}
+		if (!GenShaderTable(hg_table.data(), kRTMaterialTableCount, MaterialHGTable_, -1))
+		{
+			return false;
+		}
+	}
+	// for PathTracer.
+	{
+		void* rgs_identifier;
+		void* ms_identifier;
+		{
+			ID3D12StateObjectProperties* prop;
+			psoRayTracing_->GetPSO()->QueryInterface(IID_PPV_ARGS(&prop));
+			rgs_identifier = prop->GetShaderIdentifier(kPathTracerRGS);
+			ms_identifier = prop->GetShaderIdentifier(kPathTracerMS);
+			prop->Release();
+		}
+		if (!GenShaderTable(&rgs_identifier, 1, PathTracerRGSTable_, 1))
+		{
+			return false;
+		}
+		if (!GenShaderTable(&ms_identifier, 1, PathTracerMSTable_, 1))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool SampleApplication::CreateRayTracingShaderTableDR(sl12::CommandList* pCmdList, sl12::RenderCommandsTempList& tcmds)
+{
+	// already created.
+	if (MaterialHGTable_.IsValid())
+	{
+		return true;
+	}
+
+	// count materials and create submesh vertex/index offset.
+	sl12::u32 totalMaterialCount = 0;
+	for (auto&& cmd : tcmds)
+	{
+		if (cmd->GetType() == sl12::RenderCommandType::Mesh)
+		{
+			// count materials.
+			auto mcmd = static_cast<sl12::MeshRenderCommand*>(cmd);
+			totalMaterialCount += (sl12::u32)mcmd->GetSubmeshCommands().size();
+
+			// create offset cbv.
+			auto res = mcmd->GetParentMesh()->GetParentResource();
+			if (OffsetCBVs_.find(res) == OffsetCBVs_.end())
+			{
+				OffsetCBVs_[res].resize(res->GetSubmeshes().size());
+
+				auto&& v = OffsetCBVs_[res];
+				int idx = 0;
+				for (auto&& submesh : res->GetSubmeshes())
+				{
+					SubmeshOffsetCB cb;
+					cb.position = (UINT)(res->GetPositionHandle().offset + submesh.positionOffsetBytes);
+					cb.normal = (UINT)(res->GetNormalHandle().offset + submesh.normalOffsetBytes);
+					cb.tangent = (UINT)(res->GetTangentHandle().offset + submesh.tangentOffsetBytes);
+					cb.texcoord = (UINT)(res->GetTexcoordHandle().offset + submesh.texcoordOffsetBytes);
+					cb.index = (UINT)(res->GetIndexHandle().offset + submesh.indexOffsetBytes);
+					
+					auto h = cbvMan_->GetResident(sizeof(cb));
+					cbvMan_->RequestResidentCopy(h, &cb, sizeof(cb));
+					v[idx] = std::move(h);
+					idx++;
+				}
+			}
+		}
+	}
+	cbvMan_->ExecuteCopy(pCmdList);
+
+	// create local shader resource table.
+	struct LocalIndex
+	{
+		uint cbSubmesh;
+		uint Indices;
+		uint Vertices;
+		uint texBaseColor;
+		uint texORM;
+		uint texBaseColor_s;
+	};
+	std::vector<LocalIndex> material_table;
+	std::vector<bool> opaque_table;
+	auto FillMeshTable = [&](sl12::MeshRenderCommand* cmd)
+	{
+		auto pSceneMesh = cmd->GetParentMesh();
+		auto pMeshItem = pSceneMesh->GetParentResource();
+		auto&& submeshes = pMeshItem->GetSubmeshes();
+		for (int i = 0; i < submeshes.size(); i++)
+		{
+			auto&& submesh = submeshes[i];
+			auto&& material = pMeshItem->GetMaterials()[submesh.materialIndex];
+			auto bc_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+			auto orm_srv = device_.GetDummyTextureView(sl12::DummyTex::White);
+			if (material.baseColorTex.IsValid())
+			{
+				auto pTexBC = const_cast<sl12::ResourceItemTexture*>(material.baseColorTex.GetItem<sl12::ResourceItemTexture>());
+				bc_srv = &pTexBC->GetTextureView();
+			}
+			if (material.ormTex.IsValid())
+			{
+				auto pTexORM = const_cast<sl12::ResourceItemTexture*>(material.ormTex.GetItem<sl12::ResourceItemTexture>());
+				orm_srv = &pTexORM->GetTextureView();
+			}
+
+			opaque_table.push_back(material.isOpaque);
+
+			LocalIndex localIndex;
+			localIndex.cbSubmesh = OffsetCBVs_[pMeshItem][i].GetCBV()->GetDynamicDescInfo().index;
+			localIndex.Indices = meshMan_->GetIndexBufferSRV()->GetDynamicDescInfo().index;
+			localIndex.Vertices = meshMan_->GetVertexBufferSRV()->GetDynamicDescInfo().index;
+			localIndex.texBaseColor = bc_srv->GetDynamicDescInfo().index;
+			localIndex.texORM = orm_srv->GetDynamicDescInfo().index;
+			localIndex.texBaseColor_s = linearSampler_->GetDynamicDescInfo().index;
+			
+			material_table.push_back(localIndex);
+		}
+	};
+	for (auto&& cmd : tcmds)
+	{
+		if (cmd->GetType() == sl12::RenderCommandType::Mesh)
+		{
+			FillMeshTable(static_cast<sl12::MeshRenderCommand*>(cmd));
+		}
+	}
+
+	// create shader table.
+	auto Align = [](UINT size, UINT align)
+	{
+		return ((size + align - 1) / align) * align;
+	};
+	UINT shaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	UINT descHandleOffset = Align(shaderIdentifierSize, sizeof(D3D12_GPU_DESCRIPTOR_HANDLE));
+	UINT shaderRecordSize = Align(descHandleOffset + sizeof(LocalIndex), D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT);
+	bvhShaderRecordSize_ = shaderRecordSize;
+
+	auto GenShaderTable = [&](
+		void* const * shaderIds,
+		int tableCountPerMaterial,
+		sl12::UniqueHandle<sl12::Buffer>& buffer,
+		int materialCount)
+	{
+		buffer = sl12::MakeUnique<sl12::Buffer>(&device_);
+
+		materialCount = (materialCount < 0) ? (int)material_table.size() : materialCount;
+		sl12::BufferDesc desc{};
+		desc.heap = sl12::BufferHeap::Dynamic;
+		desc.size = shaderRecordSize * tableCountPerMaterial * materialCount;
+		desc.usage = sl12::ResourceUsage::ShaderResource;
+		desc.initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
+		if (!buffer->Initialize(&device_, desc))
+		{
+			return false;
+		}
+
+		auto p = (char*)buffer->Map();
+		for (int i = 0; i < materialCount; ++i)
+		{
+			for (int id = 0; id < tableCountPerMaterial; ++id)
+			{
+				auto start = p;
+
+				memcpy(p, shaderIds[i * tableCountPerMaterial + id], shaderIdentifierSize);
+				p += descHandleOffset;
+
+				memcpy(p, &material_table[i], sizeof(LocalIndex));
 
 				p = start + shaderRecordSize;
 			}

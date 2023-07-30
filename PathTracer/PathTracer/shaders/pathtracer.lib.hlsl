@@ -5,6 +5,8 @@
 
 #define RayTMax			10000.0
 
+#if !ENABLE_DYNAMIC_RESOURCE
+
 // global
 ConstantBuffer<SceneCB>				cbScene			: register(b0, space0);
 ConstantBuffer<LightCB>				cbLight			: register(b1, space0);
@@ -15,6 +17,24 @@ RaytracingAccelerationStructure		TLAS			: register(t0, space0);
 RWByteAddressBuffer					rtResult		: register(u0, space0);
 RWByteAddressBuffer					rtAlbedo		: register(u1, space0);
 RWByteAddressBuffer					rtNormal		: register(u2, space0);
+
+#else
+
+struct GlobalIndex
+{
+	uint cbScene;
+	uint cbLight;
+	uint cbPathTrace;
+	uint rtResult;
+	uint rtAlbedo;
+	uint rtNormal;
+};
+
+ConstantBuffer<GlobalIndex>			cbGlobalIndices	: register(b0, space0);
+RaytracingAccelerationStructure		TLAS			: register(t0, space0);
+
+#endif
+
 
 uint Hash32(uint x)
 {
@@ -108,6 +128,10 @@ float3 QuatRotVector(float3 v, float4 r)
 
 float3 SkyLight(float3 dir)
 {
+#if ENABLE_DYNAMIC_RESOURCE
+	ConstantBuffer<LightCB> cbLight = ResourceDescriptorHeap[cbGlobalIndices.cbLight];
+#endif
+
 	float t = dir.y * 0.5 + 0.5;
 	return lerp(cbLight.ambientGround, cbLight.ambientSky, t) * cbLight.ambientIntensity;
 }
@@ -115,6 +139,16 @@ float3 SkyLight(float3 dir)
 [shader("raygeneration")]
 void PathTracerRGS()
 {
+#if ENABLE_DYNAMIC_RESOURCE
+	// get dynamic resources.
+	ConstantBuffer<SceneCB> cbScene = ResourceDescriptorHeap[cbGlobalIndices.cbScene];
+	ConstantBuffer<LightCB> cbLight = ResourceDescriptorHeap[cbGlobalIndices.cbLight];
+	ConstantBuffer<PathTraceCB> cbPathTrace = ResourceDescriptorHeap[cbGlobalIndices.cbPathTrace];
+	RWByteAddressBuffer rtResult = ResourceDescriptorHeap[cbGlobalIndices.rtResult];
+	RWByteAddressBuffer rtAlbedo = ResourceDescriptorHeap[cbGlobalIndices.rtAlbedo];
+	RWByteAddressBuffer rtNormal = ResourceDescriptorHeap[cbGlobalIndices.rtNormal];
+#endif
+
 	uint2 PixelPos = DispatchRaysIndex().xy;
 	float2 xy = (float2)PixelPos + 0.5;
 	float2 clipSpacePos = xy / float2(DispatchRaysDimensions().xy) * float2(2, -2) + float2(-1, 1);

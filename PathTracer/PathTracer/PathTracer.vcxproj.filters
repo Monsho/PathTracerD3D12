@@ -22,9 +22,14 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
     <None Include="shaders\cbuffer.hlsli">
       <Filter>shader</Filter>
     </None>
+    <None Include="shaders\material.lib.hlsl" />
+    <None Include="shaders\pathtracer.lib.hlsl" />
+    <None Include="shaders\fullscreen.vv.hlsl" />
+    <None Include="shaders\tonemap.p.hlsl" />
+    <None Include="shaders\payload.hlsli" />
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

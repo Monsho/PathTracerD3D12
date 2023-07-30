@@ -51,6 +51,7 @@ private:
 
 	bool CreateRaytracingPipeline();
 	bool CreateRayTracingShaderTable(sl12::CommandList* pCmdList, sl12::RenderCommandsTempList& tcmds);
+	bool CreateRayTracingShaderTableDR(sl12::CommandList* pCmdList, sl12::RenderCommandsTempList& tcmds);
 
 	bool InitializeOIDN();
 	void DestroyOIDN();
@@ -130,6 +131,7 @@ private:
 	UniqueHandle<sl12::RootSignature>			rsVsPs_;
 	UniqueHandle<sl12::RootSignature>			rsCs_;
 	UniqueHandle<sl12::RootSignature>			rsRTGlobal_, rsRTLocal_;
+	UniqueHandle<sl12::RootSignature>			rsTonemapDR_;
 	UniqueHandle<sl12::GraphicsPipelineState>	psoTonemap_;
 	UniqueHandle<sl12::DxrPipelineState>		psoMaterialCollection_, psoPathTracer_, psoRayTracing_;
 
@@ -142,6 +144,7 @@ private:
 	sl12::ResourceHandle	hSuzanneMesh_;
 	sl12::ResourceHandle	hSponzaMesh_;
 	sl12::ResourceHandle	hSphereMesh_;
+	sl12::ResourceHandle	hTitleMesh_;
 	sl12::ResourceHandle	hDetailTex_;
 	sl12::ResourceHandle	hDotTex_;
 
@@ -181,7 +184,7 @@ private:
 	float					directionalIntensity_ = 3.0f;
 
 	// path trace parameters.
-	bool					bDeiseEnable_ = true;
+	bool					bDenoiseEnable_ = true;
 	int						ptSampleCount_ = 1;
 	int						ptDepthMax_ = 4;
 
