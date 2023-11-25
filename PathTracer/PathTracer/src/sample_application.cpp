@@ -479,6 +479,7 @@ bool SampleApplication::Execute()
 	{
 		std::vector<sl12::RenderPass> passes;
 		std::vector<sl12::RenderGraphTargetID> histories;
+		std::vector<sl12::RenderGraphTargetID> returns;
 
 		// path tracing.
 		sl12::RenderPass ptPass{};
@@ -500,7 +501,7 @@ bool SampleApplication::Execute()
 		tonemapPass.inputStates.push_back(D3D12_RESOURCE_STATE_GENERIC_READ);
 		passes.push_back(tonemapPass);
 
-		renderGraph_->CreateRenderPasses(&device_, passes, histories);
+		renderGraph_->CreateRenderPasses(&device_, passes, histories, returns);
 	}
 
 	// create scene constant buffer.
