@@ -94,6 +94,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\payload.hlsli" />
+    <None Include="shaders\vertex_factory.hlsli" />
     <ClInclude Include="src\sample_application.h" />
   </ItemGroup>
   <ItemGroup>

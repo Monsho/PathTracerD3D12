@@ -13,7 +13,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
 	auto ColorSpace = sl12::ColorSpaceType::Rec709;
 	std::string homeDir = ".\\";
-	int meshType = 0;
+	int meshType = 1;
 	int screenWidth = kDisplayWidth;
 	int screenHeight = kDisplayHeight;
 

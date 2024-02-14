@@ -1,5 +1,6 @@
 #include "cbuffer.hlsli"
 #include "payload.hlsli"
+#include "vertex_factory.hlsli"
 
 #if !ENABLE_DYNAMIC_RESOURCE
 
@@ -27,55 +28,6 @@ ConstantBuffer<LocalIndex>	cbLocalIndices	: register(b1, space0);
 
 #endif
 
-uint3 GetTriangleIndices2byte(uint offset, ByteAddressBuffer indexBuffer)
-{
-	uint alignedOffset = offset & ~0x3;
-	uint2 indices4 = indexBuffer.Load2(alignedOffset);
-
-	uint3 ret;
-	if (alignedOffset == offset)
-	{
-		ret.x = indices4.x & 0xffff;
-		ret.y = (indices4.x >> 16) & 0xffff;
-		ret.z = indices4.y & 0xffff;
-	}
-	else
-	{
-		ret.x = (indices4.x >> 16) & 0xffff;
-		ret.y = indices4.y & 0xffff;
-		ret.z = (indices4.y >> 16) & 0xffff;
-	}
-
-	return ret;
-}
-
-uint3 Get16bitIndices(uint primIdx, uint startOffset, ByteAddressBuffer indexBuffer)
-{
-	uint indexOffset = startOffset + primIdx * 2 * 3;
-	return GetTriangleIndices2byte(indexOffset, indexBuffer);
-}
-
-uint3 Get32bitIndices(uint primIdx, uint startOffset, ByteAddressBuffer indexBuffer)
-{
-	uint indexOffset = startOffset + primIdx * 4 * 3;
-	uint3 ret = indexBuffer.Load3(indexOffset);
-	return ret;
-}
-
-float3 GetFloat3Attribute(uint vertIdx, uint startOffset, ByteAddressBuffer vertexBuffer)
-{
-	uint offset = startOffset + vertIdx * 4 * 3;
-	float3 ret = asfloat(vertexBuffer.Load3(offset));
-	return ret;
-}
-
-float2 GetFloat2Attribute(uint vertIdx, uint startOffset, ByteAddressBuffer vertexBuffer)
-{
-	uint offset = startOffset + vertIdx * 4 * 2;
-	float2 ret = asfloat(vertexBuffer.Load2(offset));
-	return ret;
-}
-
 [shader("closesthit")]
 void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriangleIntersectionAttributes attr : SV_IntersectionAttributes)
 {
@@ -89,12 +41,12 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 	SamplerState texBaseColor_s = SamplerDescriptorHeap[cbLocalIndices.texBaseColor_s];
 #endif
 
-	uint3 indices = Get32bitIndices(PrimitiveIndex(), cbSubmesh.index, Indices);
+	uint3 indices = GetVertexIndices32(Indices, cbSubmesh.index, PrimitiveIndex());
 
 	float2 uvs[3] = {
-		GetFloat2Attribute(indices.x, cbSubmesh.texcoord, Vertices),
-		GetFloat2Attribute(indices.y, cbSubmesh.texcoord, Vertices),
-		GetFloat2Attribute(indices.z, cbSubmesh.texcoord, Vertices),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.x),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.y),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.z),
 	};
 	float2 uv = uvs[0] +
 		attr.barycentrics.x * (uvs[1] - uvs[0]) +
@@ -111,9 +63,9 @@ void MaterialCHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 	param.emissive = 0.0;
 
 	float3 ns[3] = {
-		GetFloat3Attribute(indices.x, cbSubmesh.normal, Vertices),
-		GetFloat3Attribute(indices.y, cbSubmesh.normal, Vertices),
-		GetFloat3Attribute(indices.z, cbSubmesh.normal, Vertices),
+		GetVertexNormal(Vertices, cbSubmesh.normal, indices.x),
+		GetVertexNormal(Vertices, cbSubmesh.normal, indices.y),
+		GetVertexNormal(Vertices, cbSubmesh.normal, indices.z),
 	};
 	param.normal = ns[0] +
 		attr.barycentrics.x * (ns[1] - ns[0]) +
@@ -138,12 +90,12 @@ void MaterialAHS(inout MaterialPayload payload : SV_RayPayload, in BuiltInTriang
 	SamplerState texBaseColor_s = SamplerDescriptorHeap[cbLocalIndices.texBaseColor_s];
 #endif
 
-	uint3 indices = Get32bitIndices(PrimitiveIndex(), cbSubmesh.index, Indices);
+	uint3 indices = GetVertexIndices32(Indices, cbSubmesh.index, PrimitiveIndex());
 
 	float2 uvs[3] = {
-		GetFloat2Attribute(indices.x, cbSubmesh.texcoord, Vertices),
-		GetFloat2Attribute(indices.y, cbSubmesh.texcoord, Vertices),
-		GetFloat2Attribute(indices.z, cbSubmesh.texcoord, Vertices),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.x),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.y),
+		GetVertexTexcoord(Vertices, cbSubmesh.texcoord, indices.z),
 	};
 	float2 uv = uvs[0] +
 		attr.barycentrics.x * (uvs[1] - uvs[0]) +
